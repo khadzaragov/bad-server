@@ -3,6 +3,7 @@ import { FilterQuery } from 'mongoose'
 import NotFoundError from '../errors/not-found-error'
 import Order from '../models/order'
 import User, { IUser } from '../models/user'
+import escapeRegExp from '../utils/escapeRegExp'
 
 // TODO: Добавить guard admin
 // eslint-disable-next-line max-len
@@ -92,7 +93,17 @@ export const getCustomers = async (
         }
 
         if (search) {
-            const searchRegex = new RegExp(search as string, 'i')
+            const rawSearch = String(search).trim()
+
+            if (rawSearch.length > 50) {
+                return res
+                    .status(400)
+                    .json({ message: 'Search query is too long' })
+            }
+
+            const safeSearch = escapeRegExp(rawSearch)
+            const searchRegex = new RegExp(safeSearch, 'i')
+
             const orders = await Order.find(
                 {
                     $or: [{ deliveryAddress: searchRegex }],
