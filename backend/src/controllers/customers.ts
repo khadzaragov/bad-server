@@ -190,11 +190,26 @@ export const updateCustomer = async (
     next: NextFunction
 ) => {
     try {
+        // Whitelist разрешённых к обновлению полей
+        const allowedFields = [
+            'name',
+            'email',
+            'phone',
+            'deliveryAddress',
+        ] as const
+
+        const updateData = Object.fromEntries(
+            Object.entries(req.body).filter(([key]) =>
+                allowedFields.includes(key as any)
+            )
+        )
+
         const updatedUser = await User.findByIdAndUpdate(
             req.params.id,
-            req.body,
+            updateData,
             {
                 new: true,
+                runValidators: true,
             }
         )
             .orFail(
@@ -204,6 +219,7 @@ export const updateCustomer = async (
                     )
             )
             .populate(['orders', 'lastOrder'])
+
         res.status(200).json(updatedUser)
     } catch (error) {
         next(error)
