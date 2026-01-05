@@ -5,6 +5,7 @@ import NotFoundError from '../errors/not-found-error'
 import Order, { IOrder } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import User from '../models/user'
+import escapeRegExp from '../utils/escapeRegExp'
 
 // eslint-disable-next-line max-len
 // GET /orders?page=2&limit=5&sort=totalAmount&order=desc&orderDateFrom=2024-07-01&orderDateTo=2024-08-01&status=delivering&totalAmountFrom=100&totalAmountTo=1000&search=%2B1
@@ -30,13 +31,9 @@ export const getOrders = async (
 
         const filters: FilterQuery<Partial<IOrder>> = {}
 
-        if (status) {
-            if (typeof status === 'object') {
-                Object.assign(filters, status)
-            }
-            if (typeof status === 'string') {
-                filters.status = status
-            }
+        // Защита от NoSQL-инъекции: принимаем только строковый status
+        if (typeof status === 'string' && status) {
+            filters.status = status
         }
 
         if (totalAmountFrom) {
@@ -90,8 +87,17 @@ export const getOrders = async (
         ]
 
         if (search) {
-            const searchRegex = new RegExp(search as string, 'i')
-            const searchNumber = Number(search)
+            const rawSearch = String(search).trim()
+
+            if (rawSearch.length > 50) {
+                return res
+                    .status(400)
+                    .json({ message: 'Search query is too long' })
+            }
+
+            const safeSearch = escapeRegExp(rawSearch)
+            const searchRegex = new RegExp(safeSearch, 'i')
+            const searchNumber = Number(rawSearch)
 
             const searchConditions: any[] = [{ 'products.title': searchRegex }]
 
@@ -184,9 +190,19 @@ export const getOrdersCurrentUser = async (
         let orders = user.orders as unknown as IOrder[]
 
         if (search) {
+            const rawSearch = String(search).trim()
+
+            if (rawSearch.length > 50) {
+                return res
+                    .status(400)
+                    .json({ message: 'Search query is too long' })
+            }
+
             // если не экранировать то получаем Invalid regular expression: /+1/i: Nothing to repeat
-            const searchRegex = new RegExp(search as string, 'i')
-            const searchNumber = Number(search)
+            const safeSearch = escapeRegExp(rawSearch)
+            const searchRegex = new RegExp(safeSearch, 'i')
+            const searchNumber = Number(rawSearch)
+
             const products = await Product.find({ title: searchRegex })
             const productIds = products.map((product) => product._id)
 
