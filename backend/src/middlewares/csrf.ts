@@ -7,7 +7,6 @@ export const csrfProtection = csrf({
         sameSite: 'lax',
         secure: false,
     },
-    ignoreMethods: ['HEAD', 'OPTIONS'],
     value: (req: Request) => {
         if (!req.headers['x-csrf-token'] && !req.headers['x-xsrf-token']) {
             return ''

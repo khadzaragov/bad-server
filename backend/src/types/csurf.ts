@@ -1,5 +1,5 @@
 declare module 'csurf' {
-    import { Request, RequestHandler } from 'express'
+    import type { Request, RequestHandler } from 'express'
 
     interface CookieOptions {
         key?: string

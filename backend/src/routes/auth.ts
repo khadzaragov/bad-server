@@ -22,11 +22,11 @@ router.get('/csrf', csrfProtection, (req, res) => {
 
 router.get('/user', auth, getCurrentUser)
 
-router.get('/logout', auth, csrfProtection, logout)
-router.get('/token', csrfProtection, refreshAccessToken)
+router.get('/logout', auth, logout)
+router.get('/token', refreshAccessToken)
 
 router.patch('/user', auth, csrfProtection, updateCurrentUser)
 
-router.get('/roles', auth, csrfProtection, getCurrentUserRoles)
+router.get('/roles', auth, getCurrentUserRoles)
 
 export default router
