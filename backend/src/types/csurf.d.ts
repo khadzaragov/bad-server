@@ -1,16 +1,19 @@
 declare module 'csurf' {
-    import { RequestHandler } from 'express'
+    import { Request, RequestHandler } from 'express'
+
+    interface CookieOptions {
+        key?: string
+        path?: string
+        domain?: string
+        secure?: boolean
+        httpOnly?: boolean
+        sameSite?: boolean | 'lax' | 'strict' | 'none'
+    }
 
     interface CsrfOptions {
-        cookie?: {
-            key?: string
-            path?: string
-            domain?: string
-            secure?: boolean
-            httpOnly?: boolean
-            sameSite?: boolean | 'lax' | 'strict' | 'none'
-        }
+        cookie?: CookieOptions
         ignoreMethods?: string[]
+        value?: (req: Request) => string
     }
 
     function csrf(options?: CsrfOptions): RequestHandler

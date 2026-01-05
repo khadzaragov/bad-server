@@ -1,10 +1,17 @@
 import csrf from 'csurf'
+import { Request } from 'express'
 
 export const csrfProtection = csrf({
     cookie: {
         httpOnly: true,
-        sameSite: 'strict',
-        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        secure: false,
     },
     ignoreMethods: ['HEAD', 'OPTIONS'],
+    value: (req: Request) => {
+        if (!req.headers['x-csrf-token'] && !req.headers['x-xsrf-token']) {
+            return ''
+        }
+        return req.headers['x-csrf-token'] as string
+    },
 })
