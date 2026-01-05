@@ -1,9 +1,34 @@
 import { Request, Express } from 'express'
+import crypto from 'crypto'
+import fs from 'fs'
 import multer, { FileFilterCallback } from 'multer'
-import { join } from 'path'
+import path from 'path'
 
 type DestinationCallback = (error: Error | null, destination: string) => void
 type FileNameCallback = (error: Error | null, filename: string) => void
+
+const allowedMimeTypes = [
+    'image/png',
+    'image/jpg',
+    'image/jpeg',
+    'image/gif',
+]
+
+// Файлы, которые будут приниматься
+const allowedExtByMime: Record<string, string> = {
+    'image/png': '.png',
+    'image/jpg': '.jpg',
+    'image/jpeg': '.jpeg',
+    'image/gif': '.gif',
+}
+
+function getUploadDir(): string {
+    const relativeDir = process.env.UPLOAD_PATH_TEMP
+        ? path.join('public', process.env.UPLOAD_PATH_TEMP)
+        : 'public'
+
+    return path.resolve(__dirname, '..', relativeDir)
+}
 
 const storage = multer.diskStorage({
     destination: (
@@ -11,15 +36,13 @@ const storage = multer.diskStorage({
         _file: Express.Multer.File,
         cb: DestinationCallback
     ) => {
-        cb(
-            null,
-            join(
-                __dirname,
-                process.env.UPLOAD_PATH_TEMP
-                    ? `../public/${process.env.UPLOAD_PATH_TEMP}`
-                    : '../public'
-            )
-        )
+        try {
+            const dir = getUploadDir()
+            fs.mkdirSync(dir, { recursive: true })
+            cb(null, dir)
+        } catch (error) {
+            cb(error as Error, '')
+        }
     },
 
     filename: (
@@ -27,28 +50,34 @@ const storage = multer.diskStorage({
         file: Express.Multer.File,
         cb: FileNameCallback
     ) => {
-        cb(null, file.originalname)
+        const ext = allowedExtByMime[file.mimetype]
+        if (!ext) {
+            return cb(new Error('Invalid file type'), '')
+        }
+
+        // Генерируем безопасное уникальное имя
+        const safeName = crypto.randomUUID()
+        return cb(null, `${safeName}${ext}`)
     },
 })
-
-const types = [
-    'image/png',
-    'image/jpg',
-    'image/jpeg',
-    'image/gif',
-    'image/svg+xml',
-]
 
 const fileFilter = (
     _req: Request,
     file: Express.Multer.File,
     cb: FileFilterCallback
 ) => {
-    if (!types.includes(file.mimetype)) {
+    if (!allowedMimeTypes.includes(file.mimetype)) {
         return cb(null, false)
     }
 
     return cb(null, true)
 }
 
-export default multer({ storage, fileFilter })
+export default multer({
+    storage,
+    fileFilter,
+    limits: {
+        fileSize: 2 * 1024 * 1024,
+        files: 1,
+    },
+})
