@@ -16,14 +16,10 @@ const { PORT = 3000 } = process.env
 const app = express()
 
 app.disable('x-powered-by')
-
 app.set('trust proxy', 1)
 
 app.use(cookieParser())
-
 app.use(cors())
-// app.use(cors({ origin: ORIGIN_ALLOW, credentials: true }));
-// app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(
     helmet({
@@ -33,15 +29,14 @@ app.use(
 
 app.use(
     rateLimit({
-        windowMs: 60 * 1000, // 1 минута
-        max: 60, // 60 запросов/мин
+        windowMs: 60 * 1000,
+        max: 60,
         standardHeaders: true,
         legacyHeaders: false,
     })
 )
 
 app.use(serveStatic(path.join(__dirname, 'public')))
-
 app.use(urlencoded({ extended: true, limit: '10kb' }))
 app.use(json({ limit: '10kb' }))
 
@@ -50,19 +45,12 @@ app.use(routes)
 app.use(errors())
 app.use(errorHandler)
 
-// eslint-disable-next-line no-console
-const bootstrap = async () => {
-    try {
-        app.listen(PORT, () => console.log('ok'))
-    } catch (error) {
-        console.error(error)
-    }
+app.listen(Number(PORT), () => {
+    // eslint-disable-next-line no-console
+    console.log(`Server listening on ${PORT}`)
+})
 
-    try {
-        await mongoose.connect(DB_ADDRESS)
-    } catch (error) {
-        console.error(error)
-    }
-}
-
-bootstrap()
+mongoose
+    .connect(DB_ADDRESS)
+    .then(() => console.log('MongoDB connected'))
+    .catch((err) => console.error('MongoDB connection error:', err))
