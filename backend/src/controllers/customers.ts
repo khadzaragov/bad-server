@@ -118,6 +118,8 @@ export const getCustomers = async (
         if (search !== undefined && typeof search !== 'string') {
             return next(new BadRequestError('Invalid search'))
         }
+        const hasSearch =
+            typeof search === 'string' && search.trim().length > 0
 
         const rawPage = parseNumberParam(page, 1)
         if (rawPage === null) {
@@ -205,7 +207,7 @@ export const getCustomers = async (
             }
         }
 
-        if (search) {
+        if (hasSearch) {
             const rawSearch = search.trim()
 
             if (rawSearch.length > 50) {
@@ -235,13 +237,13 @@ export const getCustomers = async (
             limit: normalizedLimit,
         }
 
-        const [users, totalUsers] = await Promise.all([
-            User.find(filters, null, options)
-                .select('-orders -tokens -password -roles')
-                .lean()
-                .maxTimeMS(2000),
-            User.countDocuments(filters).maxTimeMS(2000),
-        ])
+        const users = await User.find(filters, null, options)
+            .select('-orders -tokens -password -roles')
+            .lean()
+            .maxTimeMS(2000)
+        const totalUsers = hasSearch
+            ? users.length
+            : await User.countDocuments(filters).maxTimeMS(2000)
         const totalPages = Math.ceil(totalUsers / normalizedLimit)
 
         res.status(200).json({

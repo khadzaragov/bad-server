@@ -6,6 +6,35 @@ import BadRequestError from '../errors/bad-request-error'
 
 const MIN_FILE_SIZE_BYTES = 2 * 1024
 const ALLOWED_IMAGE_FORMATS = new Set(['jpeg', 'png', 'gif'])
+const METADATA_TIMEOUT_MS = 3000
+const MIME_TO_FORMAT: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpg': 'jpeg',
+    'image/jpeg': 'jpeg',
+    'image/gif': 'gif',
+}
+
+class MetadataTimeoutError extends Error {
+    constructor() {
+        super('Metadata timeout')
+    }
+}
+
+const withTimeout = async <T>(promise: Promise<T>, ms: number) => {
+    let timeoutId: NodeJS.Timeout | null = null
+    const timeout = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+            reject(new MetadataTimeoutError())
+        }, ms)
+    })
+    try {
+        return await Promise.race([promise, timeout])
+    } finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId)
+        }
+    }
+}
 
 const safeUnlink = async (filePath: string) => {
     try {
@@ -31,13 +60,24 @@ export const uploadFile = async (
 
         let metadata
         try {
-            metadata = await sharp(req.file.path).metadata()
+            metadata = await withTimeout(
+                sharp(req.file.path).metadata(),
+                METADATA_TIMEOUT_MS
+            )
         } catch (error) {
-            await safeUnlink(req.file.path)
-            return next(new BadRequestError('Invalid image file'))
+            if (error instanceof MetadataTimeoutError) {
+                const fallbackFormat = MIME_TO_FORMAT[req.file.mimetype]
+                metadata = {
+                    format: fallbackFormat,
+                    size: req.file.size,
+                }
+            } else {
+                await safeUnlink(req.file.path)
+                return next(new BadRequestError('Invalid image file'))
+            }
         }
 
-        if (!metadata.format || !ALLOWED_IMAGE_FORMATS.has(metadata.format)) {
+        if (!metadata?.format || !ALLOWED_IMAGE_FORMATS.has(metadata.format)) {
             await safeUnlink(req.file.path)
             return next(new BadRequestError('Unsupported image format'))
         }
