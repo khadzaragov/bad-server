@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import auth from '../middlewares/auth'
 import {
     getCurrentUser,
     getCurrentUserRoles,
@@ -8,16 +9,22 @@ import {
     register,
     updateCurrentUser,
 } from '../controllers/auth'
-import auth from '../middlewares/auth'
+import { csrfProtection, issueCsrfToken } from '../middlewares/csrf'
 
-const authRouter = Router()
+const router = Router()
 
-authRouter.get('/user', auth, getCurrentUser)
-authRouter.patch('/me', auth, updateCurrentUser)
-authRouter.get('/user/roles', auth, getCurrentUserRoles)
-authRouter.post('/login', login)
-authRouter.get('/token', refreshAccessToken)
-authRouter.get('/logout', logout)
-authRouter.post('/register', register)
+router.post('/login', login)
+router.post('/register', register)
 
-export default authRouter
+router.get('/csrf', issueCsrfToken)
+
+router.get('/user', auth, getCurrentUser)
+
+router.get('/logout', auth, logout)
+router.get('/token', refreshAccessToken)
+
+router.patch('/user', auth, csrfProtection, updateCurrentUser)
+
+router.get('/roles', auth, getCurrentUserRoles)
+
+export default router

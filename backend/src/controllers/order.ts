@@ -2,9 +2,35 @@ import { NextFunction, Request, Response } from 'express'
 import { FilterQuery, Error as MongooseError, Types } from 'mongoose'
 import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
-import Order, { IOrder } from '../models/order'
+import Order, { IOrder, StatusType } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import User from '../models/user'
+import escapeHtml from '../utils/escapeHtml'
+import escapeRegExp from '../utils/escapeRegExp'
+
+const MAX_PAGE_SIZE = 10
+const DEFAULT_PAGE_SIZE = 10
+const ORDER_SORT_FIELDS = new Set([
+    'createdAt',
+    'totalAmount',
+    'orderNumber',
+    'status',
+])
+const ORDER_SORT_ORDERS = new Set(['asc', 'desc'])
+
+const parseNumberParam = (value: unknown, fallback: number) => {
+    if (value === undefined) {
+        return fallback
+    }
+    if (typeof value !== 'string') {
+        return null
+    }
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) {
+        return fallback
+    }
+    return parsed
+}
 
 // eslint-disable-next-line max-len
 // GET /orders?page=2&limit=5&sort=totalAmount&order=desc&orderDateFrom=2024-07-01&orderDateTo=2024-08-01&status=delivering&totalAmountFrom=100&totalAmountTo=1000&search=%2B1
@@ -16,10 +42,10 @@ export const getOrders = async (
 ) => {
     try {
         const {
-            page = 1,
-            limit = 10,
-            sortField = 'createdAt',
-            sortOrder = 'desc',
+            page,
+            limit,
+            sortField,
+            sortOrder,
             status,
             totalAmountFrom,
             totalAmountTo,
@@ -28,15 +54,72 @@ export const getOrders = async (
             search,
         } = req.query
 
+        if (page !== undefined && typeof page !== 'string') {
+            return next(new BadRequestError('Invalid page'))
+        }
+        if (limit !== undefined && typeof limit !== 'string') {
+            return next(new BadRequestError('Invalid limit'))
+        }
+        if (sortField !== undefined && typeof sortField !== 'string') {
+            return next(new BadRequestError('Invalid sortField'))
+        }
+        if (sortOrder !== undefined && typeof sortOrder !== 'string') {
+            return next(new BadRequestError('Invalid sortOrder'))
+        }
+        if (status !== undefined && typeof status !== 'string') {
+            return next(new BadRequestError('Invalid status'))
+        }
+        if (
+            totalAmountFrom !== undefined &&
+            typeof totalAmountFrom !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid totalAmountFrom'))
+        }
+        if (totalAmountTo !== undefined && typeof totalAmountTo !== 'string') {
+            return next(new BadRequestError('Invalid totalAmountTo'))
+        }
+        if (orderDateFrom !== undefined && typeof orderDateFrom !== 'string') {
+            return next(new BadRequestError('Invalid orderDateFrom'))
+        }
+        if (orderDateTo !== undefined && typeof orderDateTo !== 'string') {
+            return next(new BadRequestError('Invalid orderDateTo'))
+        }
+        if (search !== undefined && typeof search !== 'string') {
+            return next(new BadRequestError('Invalid search'))
+        }
+
+        const rawPage = parseNumberParam(page, 1)
+        if (rawPage === null) {
+            return next(new BadRequestError('Invalid page'))
+        }
+        const rawLimit = parseNumberParam(limit, 5)
+        if (rawLimit === null) {
+            return next(new BadRequestError('Invalid limit'))
+        }
+        const normalizedPage = Math.max(1, Math.floor(rawPage))
+        const normalizedLimit = Math.min(
+            MAX_PAGE_SIZE,
+            Math.max(1, Math.floor(rawLimit))
+        )
+
+        const normalizedSortField = sortField || 'createdAt'
+        const normalizedSortOrder = sortOrder || 'desc'
+
+        if (!ORDER_SORT_FIELDS.has(normalizedSortField)) {
+            return next(new BadRequestError('Invalid sortField'))
+        }
+        if (!ORDER_SORT_ORDERS.has(normalizedSortOrder)) {
+            return next(new BadRequestError('Invalid sortOrder'))
+        }
+
         const filters: FilterQuery<Partial<IOrder>> = {}
 
-        if (status) {
-            if (typeof status === 'object') {
-                Object.assign(filters, status)
+        // Защита от NoSQL-инъекции: принимаем только строковый status
+        if (typeof status === 'string' && status) {
+            if (!Object.values(StatusType).includes(status as StatusType)) {
+                return next(new BadRequestError('Invalid status'))
             }
-            if (typeof status === 'string') {
-                filters.status = status
-            }
+            filters.status = status
         }
 
         if (totalAmountFrom) {
@@ -90,8 +173,17 @@ export const getOrders = async (
         ]
 
         if (search) {
-            const searchRegex = new RegExp(search as string, 'i')
-            const searchNumber = Number(search)
+            const rawSearch = search.trim()
+
+            if (rawSearch.length > 50) {
+                return res
+                    .status(400)
+                    .json({ message: 'Search query is too long' })
+            }
+
+            const safeSearch = escapeRegExp(rawSearch)
+            const searchRegex = new RegExp(safeSearch, 'i')
+            const searchNumber = Number(rawSearch)
 
             const searchConditions: any[] = [{ 'products.title': searchRegex }]
 
@@ -110,14 +202,13 @@ export const getOrders = async (
 
         const sort: { [key: string]: any } = {}
 
-        if (sortField && sortOrder) {
-            sort[sortField as string] = sortOrder === 'desc' ? -1 : 1
-        }
+        sort[normalizedSortField] =
+            normalizedSortOrder === 'desc' ? -1 : 1
 
         aggregatePipeline.push(
             { $sort: sort },
-            { $skip: (Number(page) - 1) * Number(limit) },
-            { $limit: Number(limit) },
+            { $skip: (normalizedPage - 1) * normalizedLimit },
+            { $limit: normalizedLimit },
             {
                 $group: {
                     _id: '$_id',
@@ -133,15 +224,15 @@ export const getOrders = async (
 
         const orders = await Order.aggregate(aggregatePipeline)
         const totalOrders = await Order.countDocuments(filters)
-        const totalPages = Math.ceil(totalOrders / Number(limit))
+        const totalPages = Math.ceil(totalOrders / normalizedLimit)
 
         res.status(200).json({
             orders,
             pagination: {
                 totalOrders,
                 totalPages,
-                currentPage: Number(page),
-                pageSize: Number(limit),
+                currentPage: normalizedPage,
+                pageSize: normalizedLimit,
             },
         })
     } catch (error) {
@@ -156,10 +247,34 @@ export const getOrdersCurrentUser = async (
 ) => {
     try {
         const userId = res.locals.user._id
-        const { search, page = 1, limit = 5 } = req.query
+        const { search, page, limit } = req.query
+
+        if (page !== undefined && typeof page !== 'string') {
+            return next(new BadRequestError('Invalid page'))
+        }
+        if (limit !== undefined && typeof limit !== 'string') {
+            return next(new BadRequestError('Invalid limit'))
+        }
+        if (search !== undefined && typeof search !== 'string') {
+            return next(new BadRequestError('Invalid search'))
+        }
+
+        const rawPage = parseNumberParam(page, 1)
+        if (rawPage === null) {
+            return next(new BadRequestError('Invalid page'))
+        }
+        const rawLimit = parseNumberParam(limit, DEFAULT_PAGE_SIZE)
+        if (rawLimit === null) {
+            return next(new BadRequestError('Invalid limit'))
+        }
+        const normalizedPage = Math.max(1, Math.floor(rawPage))
+        const normalizedLimit = Math.min(
+            MAX_PAGE_SIZE,
+            Math.max(1, Math.floor(rawLimit))
+        )
         const options = {
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
+            skip: (normalizedPage - 1) * normalizedLimit,
+            limit: normalizedLimit,
         }
 
         const user = await User.findById(userId)
@@ -184,9 +299,19 @@ export const getOrdersCurrentUser = async (
         let orders = user.orders as unknown as IOrder[]
 
         if (search) {
+            const rawSearch = search.trim()
+
+            if (rawSearch.length > 50) {
+                return res
+                    .status(400)
+                    .json({ message: 'Search query is too long' })
+            }
+
             // если не экранировать то получаем Invalid regular expression: /+1/i: Nothing to repeat
-            const searchRegex = new RegExp(search as string, 'i')
-            const searchNumber = Number(search)
+            const safeSearch = escapeRegExp(rawSearch)
+            const searchRegex = new RegExp(safeSearch, 'i')
+            const searchNumber = Number(rawSearch)
+
             const products = await Product.find({ title: searchRegex })
             const productIds = products.map((product) => product._id)
 
@@ -205,7 +330,7 @@ export const getOrdersCurrentUser = async (
         }
 
         const totalOrders = orders.length
-        const totalPages = Math.ceil(totalOrders / Number(limit))
+        const totalPages = Math.ceil(totalOrders / normalizedLimit)
 
         orders = orders.slice(options.skip, options.skip + options.limit)
 
@@ -214,8 +339,8 @@ export const getOrdersCurrentUser = async (
             pagination: {
                 totalOrders,
                 totalPages,
-                currentPage: Number(page),
-                pageSize: Number(limit),
+                currentPage: normalizedPage,
+                pageSize: normalizedLimit,
             },
         })
     } catch (error) {
@@ -293,6 +418,8 @@ export const createOrder = async (
         const userId = res.locals.user._id
         const { address, payment, phone, total, email, items, comment } =
             req.body
+        const safeComment =
+            typeof comment === 'string' ? escapeHtml(comment) : ''
 
         items.forEach((id: Types.ObjectId) => {
             const product = products.find((p) => p._id.equals(id))
@@ -315,7 +442,7 @@ export const createOrder = async (
             payment,
             phone,
             email,
-            comment,
+            comment: safeComment,
             customer: userId,
             deliveryAddress: address,
         })
@@ -339,6 +466,14 @@ export const updateOrder = async (
 ) => {
     try {
         const { status } = req.body
+        if (status !== undefined) {
+            if (
+                typeof status !== 'string' ||
+                !Object.values(StatusType).includes(status as StatusType)
+            ) {
+                return next(new BadRequestError('Invalid status'))
+            }
+        }
         const updatedOrder = await Order.findOneAndUpdate(
             { orderNumber: req.params.orderNumber },
             { status },
