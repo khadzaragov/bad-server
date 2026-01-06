@@ -20,18 +20,19 @@ const app = express()
 app.disable('x-powered-by')
 app.set('trust proxy', 1)
 
-const allowedOrigins = ORIGIN_ALLOW
-    ? ORIGIN_ALLOW.split(',')
-          .map((origin) => origin.trim())
-          .filter(Boolean)
-    : []
+const corsOrigin = ORIGIN_ALLOW?.split(',')[0]?.trim() || 'http://localhost:5173'
 const corsOptions = {
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    origin: corsOrigin,
     credentials: true,
 }
 
 app.use(cookieParser())
 app.use(cors(corsOptions))
+app.use((_req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin)
+    res.setHeader('Access-Control-Allow-Credentials', 'true')
+    next()
+})
 app.use(csrfProtection)
 
 app.use(

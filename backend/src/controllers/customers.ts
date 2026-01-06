@@ -8,6 +8,7 @@ import escapeRegExp from '../utils/escapeRegExp'
 
 const MAX_PAGE_SIZE = 10
 const DEFAULT_PAGE_SIZE = 10
+const MAX_SEARCH_ORDERS = 50
 const CUSTOMER_SORT_FIELDS = new Set([
     'createdAt',
     'totalAmount',
@@ -223,7 +224,7 @@ export const getCustomers = async (
                     $or: [{ deliveryAddress: searchRegex }],
                 },
                 '_id'
-            )
+            ).limit(MAX_SEARCH_ORDERS)
 
             const orderIds = orders.map((order) => order._id)
 
