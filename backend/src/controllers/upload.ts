@@ -87,6 +87,7 @@ export const uploadFile = async (
             : `/${req.file?.filename}`
         return res.status(constants.HTTP_STATUS_CREATED).send({
             fileName,
+            originalName: req.file.originalname,
             metadata: {
                 format: metadata.format,
                 width: metadata.width,

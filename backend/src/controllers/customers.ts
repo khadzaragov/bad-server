@@ -217,7 +217,14 @@ export const getCustomers = async (
             }
 
             const safeSearch = escapeRegExp(rawSearch)
-            const searchRegex = new RegExp(safeSearch, 'i')
+            let searchRegex: RegExp
+            try {
+                searchRegex = new RegExp(safeSearch, 'i')
+            } catch {
+                return res
+                    .status(400)
+                    .json({ message: 'Invalid search query' })
+            }
 
             filters.$or = [
                 { name: searchRegex },

@@ -47,9 +47,9 @@ export function roleGuardMiddleware(...roles: Role[]) {
             return next(new UnauthorizedError('Необходима авторизация'))
         }
 
-        const hasAccess = roles.some((role) =>
-            res.locals.user.roles.includes(role)
-        )
+        const rawRoles = (res.locals.user as { roles?: unknown }).roles
+        const userRoles = Array.isArray(rawRoles) ? rawRoles : []
+        const hasAccess = roles.some((role) => userRoles.includes(role))
 
         if (!hasAccess) {
             return next(new ForbiddenError('Доступ запрещен'))
@@ -71,7 +71,9 @@ export function currentUserAccessMiddleware<T>(
             return next(new UnauthorizedError('Необходима авторизация'))
         }
 
-        if (res.locals.user.roles.includes(Role.Admin)) {
+        const rawRoles = (res.locals.user as { roles?: unknown }).roles
+        const userRoles = Array.isArray(rawRoles) ? rawRoles : []
+        if (userRoles.includes(Role.Admin)) {
             return next()
         }
 
