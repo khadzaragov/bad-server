@@ -2,13 +2,11 @@ import { NextFunction, Request, Response } from 'express'
 import { FilterQuery } from 'mongoose'
 import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
-import Order from '../models/order'
 import User, { IUser } from '../models/user'
 import escapeRegExp from '../utils/escapeRegExp'
 
 const MAX_PAGE_SIZE = 10
 const DEFAULT_PAGE_SIZE = 10
-const MAX_SEARCH_ORDERS = 50
 const CUSTOMER_SORT_FIELDS = new Set([
     'createdAt',
     'totalAmount',
@@ -219,21 +217,10 @@ export const getCustomers = async (
             const safeSearch = escapeRegExp(rawSearch)
             const searchRegex = new RegExp(safeSearch, 'i')
 
-            const orders = await Order.find(
-                {
-                    $or: [{ deliveryAddress: searchRegex }],
-                },
-                '_id'
-            )
-                .limit(MAX_SEARCH_ORDERS)
-                .lean()
-                .maxTimeMS(2000)
-
-            const orderIds = orders.map((order) => order._id)
-
             filters.$or = [
                 { name: searchRegex },
-                { lastOrder: { $in: orderIds } },
+                { email: searchRegex },
+                { phone: searchRegex },
             ]
         }
 
@@ -248,12 +235,13 @@ export const getCustomers = async (
             limit: normalizedLimit,
         }
 
-        const users = await User.find(filters, null, options)
-            .select('-orders -tokens -password -roles')
-            .lean()
-            .maxTimeMS(2000)
-
-        const totalUsers = await User.countDocuments(filters).maxTimeMS(2000)
+        const [users, totalUsers] = await Promise.all([
+            User.find(filters, null, options)
+                .select('-orders -tokens -password -roles')
+                .lean()
+                .maxTimeMS(2000),
+            User.countDocuments(filters).maxTimeMS(2000),
+        ])
         const totalPages = Math.ceil(totalUsers / normalizedLimit)
 
         res.status(200).json({

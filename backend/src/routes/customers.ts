@@ -10,17 +10,10 @@ import { Role } from '../models/user'
 
 const customerRouter = Router()
 
-customerRouter.get('/', roleGuardMiddleware(Role.Admin), getCustomers)
-customerRouter.get('/:id', roleGuardMiddleware(Role.Admin), getCustomerById)
-customerRouter.patch(
-    '/:id',
-    roleGuardMiddleware(Role.Admin),
-    updateCustomer
-)
-customerRouter.delete(
-    '/:id',
-    roleGuardMiddleware(Role.Admin),
-    deleteCustomer
-)
+customerRouter.use(roleGuardMiddleware(Role.Admin))
+customerRouter.get('/', getCustomers)
+customerRouter.get('/:id', getCustomerById)
+customerRouter.patch('/:id', updateCustomer)
+customerRouter.delete('/:id', deleteCustomer)
 
 export default customerRouter
