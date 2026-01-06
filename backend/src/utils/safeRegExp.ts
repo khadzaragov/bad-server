@@ -35,7 +35,7 @@ export default function createSafeRegExp(
     }
 
     return new Proxy(regex, {
-        get(target, prop, receiver) {
+        get(target, prop) {
             if (prop === 'test' || prop === 'exec') {
                 return (...args: unknown[]) => {
                     const startedAt = Date.now()
@@ -47,7 +47,7 @@ export default function createSafeRegExp(
                     return result
                 }
             }
-            return Reflect.get(target, prop, receiver)
+            return Reflect.get(target, prop)
         },
     }) as RegExp
 }
