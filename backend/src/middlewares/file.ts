@@ -18,7 +18,7 @@ const allowedMimeTypes = [
 const allowedExtByMime: Record<string, string> = {
     'image/png': '.png',
     'image/jpg': '.jpg',
-    'image/jpeg': '.jpeg',
+    'image/jpeg': '.jpg',
     'image/gif': '.gif',
 }
 

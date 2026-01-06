@@ -4,6 +4,7 @@ import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
 import User, { IUser } from '../models/user'
 import escapeRegExp from '../utils/escapeRegExp'
+import createSafeRegExp, { SafeRegExpError } from '../utils/safeRegExp'
 
 const MAX_PAGE_SIZE = 10
 const DEFAULT_PAGE_SIZE = 10
@@ -216,11 +217,20 @@ export const getCustomers = async (
                     .json({ message: 'Search query is too long' })
             }
 
-            const safeSearch = escapeRegExp(rawSearch)
+            const escapedSearch = escapeRegExp(rawSearch)
             let searchRegex: RegExp
             try {
-                searchRegex = new RegExp(safeSearch, 'i')
-            } catch {
+                searchRegex = createSafeRegExp(escapedSearch, 'i', {
+                    maxLength: 50,
+                    timeout: 500,
+                    alreadyEscaped: true,
+                })
+            } catch (error) {
+                if (error instanceof SafeRegExpError) {
+                    return res
+                        .status(400)
+                        .json({ message: error.message })
+                }
                 return res
                     .status(400)
                     .json({ message: 'Invalid search query' })
