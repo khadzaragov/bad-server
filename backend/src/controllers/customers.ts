@@ -1,9 +1,35 @@
 import { NextFunction, Request, Response } from 'express'
 import { FilterQuery } from 'mongoose'
+import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
 import Order from '../models/order'
 import User, { IUser } from '../models/user'
 import escapeRegExp from '../utils/escapeRegExp'
+
+const MAX_PAGE_SIZE = 10
+const DEFAULT_PAGE_SIZE = 10
+const CUSTOMER_SORT_FIELDS = new Set([
+    'createdAt',
+    'totalAmount',
+    'orderCount',
+    'lastOrderDate',
+    'name',
+])
+const CUSTOMER_SORT_ORDERS = new Set(['asc', 'desc'])
+
+const parseNumberParam = (value: unknown, fallback: number) => {
+    if (value === undefined) {
+        return fallback
+    }
+    if (typeof value !== 'string') {
+        return null
+    }
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) {
+        return fallback
+    }
+    return parsed
+}
 
 // TODO: Добавить guard admin
 // eslint-disable-next-line max-len
@@ -15,10 +41,10 @@ export const getCustomers = async (
 ) => {
     try {
         const {
-            page = 1,
-            limit = 10,
-            sortField = 'createdAt',
-            sortOrder = 'desc',
+            page,
+            limit,
+            sortField,
+            sortOrder,
             registrationDateFrom,
             registrationDateTo,
             lastOrderDateFrom,
@@ -29,6 +55,94 @@ export const getCustomers = async (
             orderCountTo,
             search,
         } = req.query
+
+        if (page !== undefined && typeof page !== 'string') {
+            return next(new BadRequestError('Invalid page'))
+        }
+        if (limit !== undefined && typeof limit !== 'string') {
+            return next(new BadRequestError('Invalid limit'))
+        }
+        if (sortField !== undefined && typeof sortField !== 'string') {
+            return next(new BadRequestError('Invalid sortField'))
+        }
+        if (sortOrder !== undefined && typeof sortOrder !== 'string') {
+            return next(new BadRequestError('Invalid sortOrder'))
+        }
+        if (
+            registrationDateFrom !== undefined &&
+            typeof registrationDateFrom !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid registrationDateFrom'))
+        }
+        if (
+            registrationDateTo !== undefined &&
+            typeof registrationDateTo !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid registrationDateTo'))
+        }
+        if (
+            lastOrderDateFrom !== undefined &&
+            typeof lastOrderDateFrom !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid lastOrderDateFrom'))
+        }
+        if (
+            lastOrderDateTo !== undefined &&
+            typeof lastOrderDateTo !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid lastOrderDateTo'))
+        }
+        if (
+            totalAmountFrom !== undefined &&
+            typeof totalAmountFrom !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid totalAmountFrom'))
+        }
+        if (
+            totalAmountTo !== undefined &&
+            typeof totalAmountTo !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid totalAmountTo'))
+        }
+        if (
+            orderCountFrom !== undefined &&
+            typeof orderCountFrom !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid orderCountFrom'))
+        }
+        if (
+            orderCountTo !== undefined &&
+            typeof orderCountTo !== 'string'
+        ) {
+            return next(new BadRequestError('Invalid orderCountTo'))
+        }
+        if (search !== undefined && typeof search !== 'string') {
+            return next(new BadRequestError('Invalid search'))
+        }
+
+        const rawPage = parseNumberParam(page, 1)
+        if (rawPage === null) {
+            return next(new BadRequestError('Invalid page'))
+        }
+        const rawLimit = parseNumberParam(limit, DEFAULT_PAGE_SIZE)
+        if (rawLimit === null) {
+            return next(new BadRequestError('Invalid limit'))
+        }
+        const normalizedPage = Math.max(1, Math.floor(rawPage))
+        const normalizedLimit = Math.min(
+            MAX_PAGE_SIZE,
+            Math.max(1, Math.floor(rawLimit))
+        )
+
+        const normalizedSortField = sortField || 'createdAt'
+        const normalizedSortOrder = sortOrder || 'desc'
+
+        if (!CUSTOMER_SORT_FIELDS.has(normalizedSortField)) {
+            return next(new BadRequestError('Invalid sortField'))
+        }
+        if (!CUSTOMER_SORT_ORDERS.has(normalizedSortOrder)) {
+            return next(new BadRequestError('Invalid sortOrder'))
+        }
 
         const filters: FilterQuery<Partial<IUser>> = {}
 
@@ -93,7 +207,7 @@ export const getCustomers = async (
         }
 
         if (search) {
-            const rawSearch = String(search).trim()
+            const rawSearch = search.trim()
 
             if (rawSearch.length > 50) {
                 return res
@@ -121,14 +235,13 @@ export const getCustomers = async (
 
         const sort: { [key: string]: any } = {}
 
-        if (sortField && sortOrder) {
-            sort[sortField as string] = sortOrder === 'desc' ? -1 : 1
-        }
+        sort[normalizedSortField] =
+            normalizedSortOrder === 'desc' ? -1 : 1
 
         const options = {
             sort,
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
+            skip: (normalizedPage - 1) * normalizedLimit,
+            limit: normalizedLimit,
         }
 
         const users = await User.find(filters, null, options).populate([
@@ -148,15 +261,15 @@ export const getCustomers = async (
         ])
 
         const totalUsers = await User.countDocuments(filters)
-        const totalPages = Math.ceil(totalUsers / Number(limit))
+        const totalPages = Math.ceil(totalUsers / normalizedLimit)
 
         res.status(200).json({
             customers: users,
             pagination: {
                 totalUsers,
                 totalPages,
-                currentPage: Number(page),
-                pageSize: Number(limit),
+                currentPage: normalizedPage,
+                pageSize: normalizedLimit,
             },
         })
     } catch (error) {

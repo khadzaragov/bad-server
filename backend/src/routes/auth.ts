@@ -9,16 +9,14 @@ import {
     register,
     updateCurrentUser,
 } from '../controllers/auth'
-import { csrfProtection } from '../middlewares/csrf'
+import { csrfProtection, issueCsrfToken } from '../middlewares/csrf'
 
 const router = Router()
 
 router.post('/login', login)
 router.post('/register', register)
 
-router.get('/csrf', csrfProtection, (req, res) => {
-    res.json({ csrfToken: req.csrfToken() })
-})
+router.get('/csrf', issueCsrfToken)
 
 router.get('/user', auth, getCurrentUser)
 
