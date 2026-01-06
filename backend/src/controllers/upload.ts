@@ -1,7 +1,6 @@
 import { NextFunction, Request, Response } from 'express'
 import { constants } from 'http2'
 import fs from 'fs/promises'
-import path from 'path'
 import sharp from 'sharp'
 import BadRequestError from '../errors/bad-request-error'
 
@@ -46,12 +45,8 @@ export const uploadFile = async (
         const fileName = process.env.UPLOAD_PATH
             ? `/${process.env.UPLOAD_PATH}/${req.file.filename}`
             : `/${req.file?.filename}`
-        const originalName = req.file?.originalname
-            ? path.basename(req.file.originalname)
-            : undefined
         return res.status(constants.HTTP_STATUS_CREATED).send({
             fileName,
-            originalName,
             metadata: {
                 format: metadata.format,
                 width: metadata.width,

@@ -224,7 +224,10 @@ export const getCustomers = async (
                     $or: [{ deliveryAddress: searchRegex }],
                 },
                 '_id'
-            ).limit(MAX_SEARCH_ORDERS)
+            )
+                .limit(MAX_SEARCH_ORDERS)
+                .lean()
+                .maxTimeMS(2000)
 
             const orderIds = orders.map((order) => order._id)
 
@@ -245,23 +248,12 @@ export const getCustomers = async (
             limit: normalizedLimit,
         }
 
-        const users = await User.find(filters, null, options).populate([
-            'orders',
-            {
-                path: 'lastOrder',
-                populate: {
-                    path: 'products',
-                },
-            },
-            {
-                path: 'lastOrder',
-                populate: {
-                    path: 'customer',
-                },
-            },
-        ])
+        const users = await User.find(filters, null, options)
+            .select('-orders -tokens -password -roles')
+            .lean()
+            .maxTimeMS(2000)
 
-        const totalUsers = await User.countDocuments(filters)
+        const totalUsers = await User.countDocuments(filters).maxTimeMS(2000)
         const totalPages = Math.ceil(totalUsers / normalizedLimit)
 
         res.status(200).json({
