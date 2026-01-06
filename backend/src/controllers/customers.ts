@@ -1,35 +1,11 @@
 import { NextFunction, Request, Response } from 'express'
-import { FilterQuery } from 'mongoose'
 import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
-import User, { IUser } from '../models/user'
+import Order from '../models/order'
+import User from '../models/user'
 import escapeRegExp from '../utils/escapeRegExp'
-import createSafeRegExp, { SafeRegExpError } from '../utils/safeRegExp'
-
-const MAX_PAGE_SIZE = 10
-const DEFAULT_PAGE_SIZE = 10
-const CUSTOMER_SORT_FIELDS = new Set([
-    'createdAt',
-    'totalAmount',
-    'orderCount',
-    'lastOrderDate',
-    'name',
-])
-const CUSTOMER_SORT_ORDERS = new Set(['asc', 'desc'])
-
-const parseNumberParam = (value: unknown, fallback: number) => {
-    if (value === undefined) {
-        return fallback
-    }
-    if (typeof value !== 'string') {
-        return null
-    }
-    const parsed = Number(value)
-    if (!Number.isFinite(parsed)) {
-        return fallback
-    }
-    return parsed
-}
+import createSafeRegExp from '../utils/safeRegExp'
+import { normalizeLimit } from '../utils/sanitize'
 
 // TODO: Добавить guard admin
 // eslint-disable-next-line max-len
@@ -41,226 +17,110 @@ export const getCustomers = async (
 ) => {
     try {
         const {
-            page,
-            limit,
-            sortField,
-            sortOrder,
-            registrationDateFrom,
-            registrationDateTo,
-            lastOrderDateFrom,
-            lastOrderDateTo,
+            page = 1,
+            limit = 10,
+            sortField = 'createdAt',
+            sortOrder = 'desc',
+            search,
+            createdAtFrom,
+            createdAtTo,
             totalAmountFrom,
             totalAmountTo,
             orderCountFrom,
             orderCountTo,
-            search,
         } = req.query
 
-        if (page !== undefined && typeof page !== 'string') {
-            return next(new BadRequestError('Invalid page'))
-        }
-        if (limit !== undefined && typeof limit !== 'string') {
-            return next(new BadRequestError('Invalid limit'))
-        }
-        if (sortField !== undefined && typeof sortField !== 'string') {
-            return next(new BadRequestError('Invalid sortField'))
-        }
-        if (sortOrder !== undefined && typeof sortOrder !== 'string') {
-            return next(new BadRequestError('Invalid sortOrder'))
-        }
-        if (
-            registrationDateFrom !== undefined &&
-            typeof registrationDateFrom !== 'string'
-        ) {
-            return next(new BadRequestError('Invalid registrationDateFrom'))
-        }
-        if (
-            registrationDateTo !== undefined &&
-            typeof registrationDateTo !== 'string'
-        ) {
-            return next(new BadRequestError('Invalid registrationDateTo'))
-        }
-        if (
-            lastOrderDateFrom !== undefined &&
-            typeof lastOrderDateFrom !== 'string'
-        ) {
-            return next(new BadRequestError('Invalid lastOrderDateFrom'))
-        }
-        if (
-            lastOrderDateTo !== undefined &&
-            typeof lastOrderDateTo !== 'string'
-        ) {
-            return next(new BadRequestError('Invalid lastOrderDateTo'))
-        }
-        if (
-            totalAmountFrom !== undefined &&
-            typeof totalAmountFrom !== 'string'
-        ) {
-            return next(new BadRequestError('Invalid totalAmountFrom'))
-        }
-        if (
-            totalAmountTo !== undefined &&
-            typeof totalAmountTo !== 'string'
-        ) {
-            return next(new BadRequestError('Invalid totalAmountTo'))
-        }
-        if (
-            orderCountFrom !== undefined &&
-            typeof orderCountFrom !== 'string'
-        ) {
-            return next(new BadRequestError('Invalid orderCountFrom'))
-        }
-        if (
-            orderCountTo !== undefined &&
-            typeof orderCountTo !== 'string'
-        ) {
-            return next(new BadRequestError('Invalid orderCountTo'))
-        }
-        if (search !== undefined && typeof search !== 'string') {
-            return next(new BadRequestError('Invalid search'))
-        }
-        const hasSearch =
-            typeof search === 'string' && search.trim().length > 0
+        const normalizedLimit = normalizeLimit(limit, 10, 10)
 
-        const rawPage = parseNumberParam(page, 1)
-        if (rawPage === null) {
-            return next(new BadRequestError('Invalid page'))
-        }
-        const rawLimit = parseNumberParam(limit, DEFAULT_PAGE_SIZE)
-        if (rawLimit === null) {
-            return next(new BadRequestError('Invalid limit'))
-        }
-        const normalizedPage = Math.max(1, Math.floor(rawPage))
-        const normalizedLimit = Math.min(
-            MAX_PAGE_SIZE,
-            Math.max(1, Math.floor(rawLimit))
-        )
+        const filters: any = {}
 
-        const normalizedSortField = sortField || 'createdAt'
-        const normalizedSortOrder = sortOrder || 'desc'
-
-        if (!CUSTOMER_SORT_FIELDS.has(normalizedSortField)) {
-            return next(new BadRequestError('Invalid sortField'))
-        }
-        if (!CUSTOMER_SORT_ORDERS.has(normalizedSortOrder)) {
-            return next(new BadRequestError('Invalid sortOrder'))
-        }
-
-        const filters: FilterQuery<Partial<IUser>> = {}
-
-        if (registrationDateFrom) {
-            filters.createdAt = {
-                ...filters.createdAt,
-                $gte: new Date(registrationDateFrom as string),
+        if (createdAtFrom || createdAtTo) {
+            filters.createdAt = {}
+            if (createdAtFrom) {
+                filters.createdAt.$gte = new Date(createdAtFrom as string)
+            }
+            if (createdAtTo) {
+                filters.createdAt.$lte = new Date(createdAtTo as string)
             }
         }
 
-        if (registrationDateTo) {
-            const endOfDay = new Date(registrationDateTo as string)
-            endOfDay.setHours(23, 59, 59, 999)
-            filters.createdAt = {
-                ...filters.createdAt,
-                $lte: endOfDay,
+        if (totalAmountFrom || totalAmountTo) {
+            filters.totalAmount = {}
+            if (totalAmountFrom) {
+                filters.totalAmount.$gte = Number(totalAmountFrom)
+            }
+            if (totalAmountTo) {
+                filters.totalAmount.$lte = Number(totalAmountTo)
             }
         }
 
-        if (lastOrderDateFrom) {
-            filters.lastOrderDate = {
-                ...filters.lastOrderDate,
-                $gte: new Date(lastOrderDateFrom as string),
+        if (orderCountFrom || orderCountTo) {
+            filters.orderCount = {}
+            if (orderCountFrom) {
+                filters.orderCount.$gte = Number(orderCountFrom)
+            }
+            if (orderCountTo) {
+                filters.orderCount.$lte = Number(orderCountTo)
             }
         }
 
-        if (lastOrderDateTo) {
-            const endOfDay = new Date(lastOrderDateTo as string)
-            endOfDay.setHours(23, 59, 59, 999)
-            filters.lastOrderDate = {
-                ...filters.lastOrderDate,
-                $lte: endOfDay,
-            }
-        }
+        if (search) {
+            const escapedSearch = escapeRegExp(search as string)
+            const searchRegex = createSafeRegExp(escapedSearch, 'i', {
+                timeout: 500,
+                maxLength: 50,
+                alreadyEscaped: true,
+            })
 
-        if (totalAmountFrom) {
-            filters.totalAmount = {
-                ...filters.totalAmount,
-                $gte: Number(totalAmountFrom),
-            }
-        }
-
-        if (totalAmountTo) {
-            filters.totalAmount = {
-                ...filters.totalAmount,
-                $lte: Number(totalAmountTo),
-            }
-        }
-
-        if (orderCountFrom) {
-            filters.orderCount = {
-                ...filters.orderCount,
-                $gte: Number(orderCountFrom),
-            }
-        }
-
-        if (orderCountTo) {
-            filters.orderCount = {
-                ...filters.orderCount,
-                $lte: Number(orderCountTo),
-            }
-        }
-
-        if (hasSearch) {
-            const rawSearch = search.trim()
-
-            if (rawSearch.length > 50) {
-                return res
-                    .status(400)
-                    .json({ message: 'Search query is too long' })
-            }
-
-            const escapedSearch = escapeRegExp(rawSearch)
-            let searchRegex: RegExp
-            try {
-                searchRegex = createSafeRegExp(escapedSearch, 'i', {
-                    maxLength: 50,
-                    timeout: 500,
-                    alreadyEscaped: true,
-                })
-            } catch (error) {
-                if (error instanceof SafeRegExpError) {
-                    return res
-                        .status(400)
-                        .json({ message: error.message })
-                }
-                return res
-                    .status(400)
-                    .json({ message: 'Invalid search query' })
-            }
+            const orders = await Order.find(
+                { $or: [{ deliveryAddress: searchRegex }] },
+                '_id'
+            )
+            const orderIds = orders.map((o) => o._id)
 
             filters.$or = [
                 { name: searchRegex },
-                { email: searchRegex },
-                { phone: searchRegex },
+                { lastOrder: { $in: orderIds } },
             ]
         }
 
-        const sort: { [key: string]: any } = {}
-
-        sort[normalizedSortField] =
-            normalizedSortOrder === 'desc' ? -1 : 1
+        const allowedSortFields = [
+            'createdAt',
+            'name',
+            'totalAmount',
+            'orderCount',
+            'lastOrderDate',
+        ]
+        const sort: any = {}
+        if (
+            typeof sortField === 'string' &&
+            !allowedSortFields.includes(sortField)
+        ) {
+            return next(new BadRequestError('Недопустимое поле для сортировки'))
+        }
+        if (sortField && sortOrder) {
+            sort[sortField as string] = sortOrder === 'desc' ? -1 : 1
+        }
 
         const options = {
             sort,
-            skip: (normalizedPage - 1) * normalizedLimit,
+            skip: (Number(page) - 1) * normalizedLimit,
             limit: normalizedLimit,
         }
 
-        const users = await User.find(filters, null, options)
-            .select('-orders -tokens -password -roles')
-            .lean()
-            .maxTimeMS(2000)
-        const totalUsers = hasSearch
-            ? users.length
-            : await User.countDocuments(filters).maxTimeMS(2000)
+        const users = await User.find(filters, null, options).populate([
+            'orders',
+            {
+                path: 'lastOrder',
+                populate: { path: 'products' },
+            },
+            {
+                path: 'lastOrder',
+                populate: { path: 'customer' },
+            },
+        ])
+
+        const totalUsers = await User.countDocuments(filters)
         const totalPages = Math.ceil(totalUsers / normalizedLimit)
 
         res.status(200).json({
@@ -268,7 +128,7 @@ export const getCustomers = async (
             pagination: {
                 totalUsers,
                 totalPages,
-                currentPage: normalizedPage,
+                currentPage: Number(page),
                 pageSize: normalizedLimit,
             },
         })

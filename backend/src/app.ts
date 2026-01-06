@@ -4,13 +4,13 @@ import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
 import express, { json, urlencoded } from 'express'
-import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import mongoose from 'mongoose'
 import path from 'path'
 import { DB_ADDRESS } from './config'
 import { csrfProtection } from './middlewares/csrf'
 import errorHandler from './middlewares/error-handler'
+import { generalLimiter } from './middlewares/rate-limit'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
 
@@ -41,14 +41,7 @@ app.use(
     })
 )
 
-app.use(
-    rateLimit({
-        windowMs: 60 * 1000,
-        max: 10,
-        standardHeaders: true,
-        legacyHeaders: false,
-    })
-)
+app.use(generalLimiter)
 
 app.use(serveStatic(path.join(__dirname, 'public')))
 app.use(urlencoded({ extended: true, limit: '10kb' }))
